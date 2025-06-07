@@ -1,0 +1,216 @@
+// This is your Prisma schema file
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  name            String
+  hashedPassword  String?
+  phone           String?
+  whatsappNumber  String?
+  stripeCustomerId String?
+  subscriptionTier String  @default("starter") // starter, professional, enterprise
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  properties      Property[]
+  jobs            Job[]
+}
+
+model Property {
+  id               String   @id @default(cuid())
+  userId           String
+  name             String
+  address          String
+  city             String
+  state            String
+  zipCode          String
+  country          String   @default("US")
+  latitude         Float?
+  longitude        Float?
+  accessInstructions String?
+  lockboxCode      String?
+  wifiName         String?
+  wifiPassword     String?
+  parkingInstructions String?
+  specialNotes     String?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobs            Job[]
+}
+
+model Provider {
+  id              String   @id @default(cuid())
+  name            String
+  businessName    String?
+  email           String   @unique
+  phone           String   @unique
+  whatsappNumber  String
+  serviceTypes    String[] // cleaning, maintenance, plumbing, electrical, locksmith
+  serviceAreas    String[] // zip codes
+  hourly         Decimal  @db.Decimal(10, 2)
+  rating          Decimal  @default(5.0) @db.Decimal(3, 2)
+  totalJobs       Int      @default(0)
+  completionRate  Decimal  @default(100.0) @db.Decimal(5, 2)
+  responseTime    Int?     // average in minutes
+  isActive        Boolean  @default(true)
+  isAvailable     Boolean  @default(true)
+  stripeAccountId String?
+  stripeOnboarded Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  jobs            Job[]
+  dispatches      JobDispatch[]
+}
+
+model Job {
+  id               String   @id @default(cuid())
+  userId           String
+  propertyId       String
+  providerId       String?
+  type             String   // cleaning, maintenance, plumbing, electrical, locksmith, other
+  status           String   @default("pending") // pending, dispatched, accepted, in_progress, completed, canceled
+  urgency          String   @default("normal") // normal, high, emergency
+  title            String
+  description      String?
+  specialInstructions String?
+  scheduledDate    DateTime
+  scheduledTime    String?  // "14:00"
+  estimatedHours   Decimal  @db.Decimal(4, 2)
+  estimatedCost    Decimal? @db.Decimal(10, 2)
+  actualCost       Decimal? @db.Decimal(10, 2)
+  platformFee      Decimal? @db.Decimal(10, 2)
+  providerPayout   Decimal? @db.Decimal(10, 2)
+  guestPhone       String?
+  guestNotified    Boolean  @default(false)
+  dispatchedAt     DateTime?
+  acceptedAt       DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  paymentStatus    String?  // pending, processing, completed, failed
+  paymentIntentId  String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  user            User          @relation(fields: [userId], references: [id])
+  property        Property      @relation(fields: [propertyId], references: [id])
+  provider        Provider?     @relation(fields: [providerId], references: [id])
+  dispatches      JobDispatch[]
+  photos          JobPhoto[]
+  messages        WhatsAppMessage[]
+  guestMessages   GuestCommunication[]
+  feedback        GuestFeedback?
+  payment         PaymentTransaction?
+}
+
+model JobDispatch {
+  id            String   @id @default(cuid())
+  jobId         String
+  providerId    String
+  dispatchOrder Int
+  aiScore       Int
+  status        String   @default("pending") // pending, sent, accepted, declined, no_response
+  sentAt        DateTime?
+  respondedAt   DateTime?
+  responseMessage String?
+  createdAt     DateTime @default(now())
+  
+  job          Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  provider     Provider @relation(fields: [providerId], references: [id])
+  
+  @@index([jobId])
+  @@index([providerId])
+}
+
+model JobPhoto {
+  id          String   @id @default(cuid())
+  jobId       String
+  type        String   // before, after, issue
+  url         String
+  thumbnailUrl String?
+  uploadedAt  DateTime @default(now())
+  
+  job         Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  @@index([jobId])
+}
+
+model WhatsAppMessage {
+  id          String   @id @default(cuid())
+  jobId       String?
+  providerId  String?
+  direction   String   // inbound, outbound
+  fromNumber  String
+  toNumber    String
+  messageSid  String?
+  messageBody String
+  mediaUrls   String[]
+  status      String?
+  createdAt   DateTime @default(now())
+  
+  job         Job?     @relation(fields: [jobId], references: [id])
+  
+  @@index([jobId])
+  @@index([providerId])
+}
+
+model GuestCommunication {
+  id            String   @id @default(cuid())
+  jobId         String?
+  propertyId    String
+  guestPhone    String
+  messageType   String   // inquiry, service_notification, completion, survey
+  messageContent String
+  aiIntent      String?
+  aiSentiment   String?
+  aiUrgency     Int?
+  requiresHuman Boolean  @default(false)
+  humanReviewed Boolean  @default(false)
+  sentAt        DateTime?
+  deliveredAt   DateTime?
+  readAt        DateTime?
+  createdAt     DateTime @default(now())
+  
+  job          Job?     @relation(fields: [jobId], references: [id])
+  
+  @@index([jobId])
+  @@index([propertyId])
+}
+
+model GuestFeedback {
+  id          String   @id @default(cuid())
+  jobId       String   @unique
+  rating      Int      // 1-5
+  comment     String?
+  submittedAt DateTime @default(now())
+  
+  job         Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+}
+
+model PaymentTransaction {
+  id                String   @id @default(cuid())
+  jobId             String   @unique
+  providerId        String
+  stripePaymentIntentId String?
+  stripeTransferId  String?
+  amount            Decimal  @db.Decimal(10, 2)
+  platformFee       Decimal  @db.Decimal(10, 2)
+  providerPayout    Decimal  @db.Decimal(10, 2)
+  status            String   // pending, processing, completed, failed, refunded
+  errorMessage      String?
+  processedAt       DateTime?
+  createdAt         DateTime @default(now())
+  
+  job              Job      @relation(fields: [jobId], references: [id])
+}
