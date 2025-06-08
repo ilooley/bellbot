@@ -47,6 +47,7 @@ model Property {
   
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   jobs            Job[]
+  units           Unit[]
 }
 
 model Provider {
@@ -213,4 +214,29 @@ model PaymentTransaction {
   createdAt         DateTime @default(now())
   
   job              Job      @relation(fields: [jobId], references: [id])
+}
+
+model Unit {
+  id                String   @id @default(cuid())
+  propertyId        String
+  name              String
+  unitNumber        String
+  floor             String?
+  bedrooms          Int      @default(1)
+  bathrooms         Int      @default(1)
+  squareFeet        Int?
+  maxOccupancy      Int?
+  description       String?
+  accessInstructions String?
+  lockboxCode       String?
+  wifiName          String?
+  wifiPassword      String?
+  specialNotes      String?
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  property         Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  
+  @@index([propertyId])
 }
