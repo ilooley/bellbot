@@ -1,66 +1,76 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { verifyPassword, generateToken } from '@/lib/auth';
+import bcrypt from 'bcrypt';
 import { z } from 'zod';
+import { generateToken } from '@/lib/auth'; // generateToken expects userId (string)
 
 const loginUserSchema = z.object({
-  email: z.string().email({ message: 'Invalid email address' }),
-  password: z.string().min(1, { message: 'Password is required' }),
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(1, 'Password cannot be empty'),
 });
 
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
+  console.log('[API /auth/login] Received request');
   try {
-    const body = await req.json();
-    const parsedCredentials = loginUserSchema.safeParse(body);
+    const body = await request.json();
+    console.log('[API /auth/login] Request body:', body);
 
-    if (!parsedCredentials.success) {
-      return NextResponse.json(
-        { message: 'Invalid input', errors: parsedCredentials.error.flatten().fieldErrors },
-        { status: 400 }
-      );
+    const validation = loginUserSchema.safeParse(body);
+
+    if (!validation.success) {
+      console.log('[API /auth/login] Validation failed:', validation.error.flatten().fieldErrors);
+      return NextResponse.json({ message: 'Invalid input', errors: validation.error.flatten().fieldErrors }, { status: 400 });
     }
 
-    const { email, password } = parsedCredentials.data;
+    const { email, password } = validation.data;
+    console.log(`[API /auth/login] Attempting login for email: ${email}`);
 
     const user = await prisma.user.findUnique({
       where: { email },
     });
 
     if (!user) {
-      return NextResponse.json({ message: 'Invalid email or password' }, { status: 401 });
+      console.log(`[API /auth/login] User not found for email: ${email}`);
+      return NextResponse.json({ message: 'Invalid credentials' }, { status: 401 }); // Generic message
     }
+    console.log(`[API /auth/login] User found: ${user.id}`);
 
-    if (!user.hashedPassword) {
-        // This case should ideally not happen if users are always created with a password
-        console.error(`User ${email} has no hashed password set.`);
-        return NextResponse.json({ message: 'Authentication configuration error for user.' }, { status: 500 });
+    const passwordMatch = await bcrypt.compare(password, user.hashedPassword);
+
+    if (!passwordMatch) {
+      console.log(`[API /auth/login] Password mismatch for user: ${user.id}`);
+      return NextResponse.json({ message: 'Invalid credentials' }, { status: 401 }); // Generic message
     }
+    console.log(`[API /auth/login] Password matched for user: ${user.id}`);
 
-    const isPasswordValid = await verifyPassword(password, user.hashedPassword);
-
-    if (!isPasswordValid) {
-      return NextResponse.json({ message: 'Invalid email or password' }, { status: 401 });
+    // Generate token with user.id    // Generate JWT
+    const secretForTokenGeneration = process.env.JWT_SECRET;
+    console.log(`[API /auth/login] JWT_SECRET for generation (first 5 chars): ${secretForTokenGeneration ? secretForTokenGeneration.substring(0, 5) : 'UNDEFINED'}`);
+    if (!secretForTokenGeneration) {
+      console.error('[API /auth/login] JWT_SECRET is not defined during token generation!');
+      // Potentially return a 500 error here as this is a server configuration issue
     }
+    const token = await generateToken(user.id);
+    console.log(`[API /auth/login] Token generated for user: ${user.id}, Token: ${token}`);
 
-    const token = generateToken({ userId: user.id, email: user.email });
+    // Return only necessary user info, excluding password
+    const { hashedPassword, ...userToReturn } = user;
 
-    // Return token and some user info (excluding sensitive data like hashedPassword)
-    const { hashedPassword, ...userWithoutPassword } = user;
-
-    return NextResponse.json({
+    const responsePayload = {
       message: 'Login successful',
       token,
-      user: userWithoutPassword,
-    }, { status: 200 });
+      user: {
+        id: userToReturn.id,
+        name: userToReturn.name ?? '', // Provide empty string if name is null
+        email: userToReturn.email,
+        // Add any other fields from User model that are safe and needed by the client
+      },
+    };
+    console.log('[API /auth/login] Sending success response:', responsePayload);
+    return NextResponse.json(responsePayload);
 
   } catch (error) {
-    console.error('Login error:', error);
-    if (error instanceof z.ZodError) {
-        return NextResponse.json(
-          { message: 'Validation error during login', errors: error.flatten().fieldErrors },
-          { status: 400 }
-        );
-      }
+    console.error('[API /auth/login] Internal server error:', error);
     return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
   }
 }

@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from '@/contexts/auth-context';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button'; // Import Button for logout
+import { DashboardSidebar } from '@/components/dashboard/sidebar';
 
 // Component for the navigation bar, using useAuth for logout and user info
 function AuthenticatedNavbar() {
@@ -71,42 +72,45 @@ function DashboardGuard({ children }: { children: React.ReactNode }) {
     if (isLoading) return;
 
     if (!user && !token) {
-      router.replace(`/login?redirect=${pathname}`);
+      router.replace(`/login?next=${encodeURIComponent(pathname)}`);
     }
-  }, [user, isLoading, token, router, pathname]);
+  }, [isLoading, user, token, router, pathname]);
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p>Loading dashboard...</p>
+      <div className="flex items-center justify-center h-screen bg-gray-50">
+        <div className="text-center">
+          <h3 className="text-lg font-semibold text-gray-700">Loading...</h3>
+          <p className="text-sm text-gray-500">Please wait while we load your dashboard.</p>
+        </div>
       </div>
     );
   }
 
-  if (!user) {
-    // This state might be brief as useEffect should redirect.
-    // Or middleware might have already redirected server-side.
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p>Redirecting to login...</p>
-      </div>
-    );
+  if (!user && !token) {
+    return null;
   }
-  
+
   return <>{children}</>;
 }
 
 // Main layout component for the dashboard
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    // AuthProvider removed from here, it's in the root layout via ClientProviders
-    <div className="min-h-screen bg-gray-100">
-      <AuthenticatedNavbar /> {/* AuthenticatedNavbar uses useAuth, will access root AuthProvider */}
-      <main>
-        <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-          <DashboardGuard>{children}</DashboardGuard> {/* DashboardGuard uses useAuth, will access root AuthProvider */}
+    <AuthProvider>
+      <AuthenticatedNavbar />
+      <DashboardGuard>
+        <div className="flex h-screen bg-gray-100">
+          <DashboardSidebar />
+          <main className="flex-1 overflow-y-auto p-6">
+            {children}
+          </main>
         </div>
-      </main>
-    </div>
+      </DashboardGuard>
+    </AuthProvider>
   );
 }
